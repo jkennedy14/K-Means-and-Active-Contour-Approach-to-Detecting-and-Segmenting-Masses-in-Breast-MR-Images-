@@ -8,62 +8,6 @@ import morphsnakes
 from scipy.misc import imread
 from matplotlib import pyplot, cm
 import pylab
-
-PathDicom = "./Documents/BREAST IMAGES used in Model/Patient 2/BLISS"
-P2S1S2 = []  # create an empty list
-for dirName, subdirList, fileList in os.walk(PathDicom):
-    for filename in fileList:
-        if ".dcm" in filename.lower():  # check whether the file's DICOM
-            P2S1S2.append(os.path.join(dirName,filename))
-            
-RefImgP2S2 = dicom.read_file(P2S1S2[1])
-ConstPixelDimsP2S2 = (int(RefImgP2S2.Rows), int(RefImgP2S2.Columns),len(P2S1S2))
-ImgArrayP2S2 =numpy.zeros(ConstPixelDimsP2S2, dtype=RefImgP2S2.pixel_array.dtype)
-
-PathDicom = "./Documents/BREAST IMAGES used in Model/Patient 1/BLISS"
-P1S1S2 = []  # create an empty list
-for dirName, subdirList, fileList in os.walk(PathDicom):
-    for filename in fileList:
-        if ".dcm" in filename.lower():  # check whether the file's DICOM
-            P1S1S2.append(os.path.join(dirName,filename))
-            
-
-PathDicom = "./Documents/BREAST IMAGES used in Model/Patient 6/Study 8/BLISS"
-P6S8S1 = []  # create an empty list
-for dirName, subdirList, fileList in os.walk(PathDicom):
-    for filename in fileList:
-        if ".dcm" in filename.lower():  # check whether the file's DICOM
-            P6S8S1.append(os.path.join(dirName,filename))
-    
-            
-RefImgP2S2 = dicom.read_file(P2S1S2[1])
-ConstPixelDimsP2S2 = (int(RefImgP2S2.Rows), int(RefImgP2S2.Columns),len(P2S1S2))
-ImgArrayP2S2 =numpy.zeros(ConstPixelDimsP2S2, dtype=RefImgP2S2.pixel_array.dtype)
-
-RefImgP6S8 = dicom.read_file(P6S8S1[1])
-ConstPixelDimsP6S8 = (int(RefImgP6S8.Rows), int(RefImgP6S8.Columns),len(P6S8S1))
-ImgArrayP6S8 =numpy.zeros(ConstPixelDimsP6S8, dtype=RefImgP6S8.pixel_array.dtype)
-
-RefImgP1S2 = dicom.read_file(P1S1S2[1])
-ConstPixelDimsP1S2 = (int(RefImgP1S2.Rows), int(RefImgP1S2.Columns),len(P1S1S2))
-ImgArrayP1S2 =numpy.zeros(ConstPixelDimsP1S2, dtype=RefImgP1S2.pixel_array.dtype)
-
-
-n1=0
-for filenameDCM in P1S1S2:
-    ds = dicom.read_file(filenameDCM)
-    ImgArrayP1S2[:, :,n1] = ds.pixel_array
-    n1+=1
-n1=0
-for filenameDCM in P2S1S2:
-    ds = dicom.read_file(filenameDCM)
-    ImgArrayP2S2[:, :,n1] = ds.pixel_array
-    n1+=1
-n1=0
-for filenameDCM in P6S8S1:
-    ds = dicom.read_file(filenameDCM)
-    ImgArrayP6S8[:, :,n1] = ds.pixel_array
-    n1+=1
 	
 def MIP_Return(IMGSeries):
     maxarray=numpy.zeros((int(IMGSeries.shape[0]), int(IMGSeries.shape[1]), int(IMGSeries.shape[2])))
