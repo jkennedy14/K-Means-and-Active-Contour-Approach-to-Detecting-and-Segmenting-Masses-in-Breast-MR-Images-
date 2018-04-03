@@ -82,23 +82,18 @@ def avgsurrvalues(img, x1, x2, y1, y2):
         
     return avgsurrvaluesvec
 	
-def circle_binary_set(shape, center, sqradius, scalerow=1.0):
+def circle_binary_set(shape, center, radius, scalerow=1.0):
 
-    """Build a binary function with a circle as the 0.5-levelset."""
-    grid = numpy.mgrid[list(map(slice, shape))].T - center
-    phi = sqradius - numpy.sqrt(numpy.sum((grid.T)**2, 0))
-    u = numpy.float_(phi > 0)
+    bin_grid = numpy.mgrid[list(map(slice, shape))].T - center
+    rad = radius - numpy.sqrt(numpy.sum((bin_grid.T)**2, 0))
+    result = numpy.float_(rad > 0)
 
-    return u
+    return result
 	
 def morph_snake(img, ROI, radius):
     img1 = img/255.0
     # g(I)
     gI = morphsnakes.gborders(img1, alpha=1000, sigma=11)
-
-    # Morphological GAC. Initialization of the level-set.
-    #mgac = morphsnakes.MorphGAC(gI, smoothing=1, threshold=3, balloon=1)
-    #mgac.levelset = circle_levelset(img1.shape, (160, 330), 15,scalerow=0.75)
 
     mgac = morphsnakes.MorphACWE(img1, smoothing=3, lambda1=1, lambda2=1)
     mgac.levelset = circle_binary_set(img1.shape,ROI , radius)
