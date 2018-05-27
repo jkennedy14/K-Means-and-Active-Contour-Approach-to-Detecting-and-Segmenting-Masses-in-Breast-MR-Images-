@@ -23,7 +23,7 @@ def MIP_Return(IMGSeries):
                    
     MipImage = maxarr.reshape(math.sqrt(len(maxarr)), math.sqrt(len(maxarr)))            
     return(MipImage)
-	
+
 def segment(image, tumorxcoord, tumorycoord, num_clusts):
     x1=0
     y1=0
@@ -43,9 +43,11 @@ def segment(image, tumorxcoord, tumorycoord, num_clusts):
         arr.append([flattenedImage[i], avgsurrpixels[i]])
 
     clt.fit(arr) 
+    seg=clt.labels_
+    seg2D= seg.reshape(math.sqrt(len(seg)), math.sqrt(len(seg)))
     
-    return clt.labels_
-	
+    return seg2D
+
 def avgsurrvalues(img, x1, x2, y1, y2):
     
     avgsurrvaluesvec = []
@@ -81,22 +83,27 @@ def avgsurrvalues(img, x1, x2, y1, y2):
             avgsurrvaluesvec.append(avg)
         
     return avgsurrvaluesvec
-	
-def circle_binary_set(shape, center, radius, scalerow=1.0):
 
-    bin_grid = numpy.mgrid[list(map(slice, shape))].T - center
-    rad = radius - numpy.sqrt(numpy.sum((bin_grid.T)**2, 0))
-    result = numpy.float_(rad > 0)
+def circle_levelset(shape, center, sqradius, scalerow=1.0):
 
-    return result
-	
+    """Build a binary function with a circle as the 0.5-levelset."""
+    grid = numpy.mgrid[list(map(slice, shape))].T - center
+    phi = sqradius - numpy.sqrt(numpy.sum((grid.T)**2, 0))
+    u = numpy.float_(phi > 0)
+
+    return u
+
 def morph_snake(img, ROI, radius):
     img1 = img/255.0
     # g(I)
     gI = morphsnakes.gborders(img1, alpha=1000, sigma=11)
 
+    # Morphological GAC. Initialization of the level-set.
+    #mgac = morphsnakes.MorphGAC(gI, smoothing=1, threshold=3, balloon=1)
+    #mgac.levelset = circle_levelset(img1.shape, (160, 330), 15,scalerow=0.75)
+
     mgac = morphsnakes.MorphACWE(img1, smoothing=3, lambda1=1, lambda2=1)
-    mgac.levelset = circle_binary_set(img1.shape,ROI , radius)
+    mgac.levelset = circle_levelset(img1.shape,ROI , radius)
     
     # Visual evolution.
     pylab.figure(figsize=(8, 6), dpi=400)
@@ -137,10 +144,7 @@ def trigtimetumordetect(dicomImgArr):
     
     returnimgs = []
     returnimgargs = []
-    #for i in range(maxdiffarg,len(unique)):
-        #returnimgs.append(ImgArray[:,:,i,:])
-        #returnimgs.append(MIP_Return(ImgArray[:,:,i,:]))
-        #returnimgargs.append(i) 
+    lastimgs = ImgArray[:,:,len(unique)-1,:]
     
     returnimgs = ImgArray[:,:,maxdiffarg,:]
     returnimgargs = maxdiffarg
@@ -151,27 +155,26 @@ def trigtimetumordetect(dicomImgArr):
     PicDim = int(ImgArray.shape[0])
     
     #return imgs of peak TT, arg of peak TT in TT seq, and MIP of TT before
-    return (returnimgs, returnimgargs, MIPBeforePeakTT, PicDim)
-	
+    return (returnimgs, returnimgargs, MIPBeforePeakTT, PicDim, lastimgs)
+
 def LocateTumor(dicomimgarr):
-    ImgarrTTPeak, TTarg, ImgarrMIPBeforeTTPeak,dim  = trigtimetumordetect(dicomimgarr)
+    ImgarrTTPeak, TTarg, ImgarrMIPBeforeTTPeak,dim,lastimgs  = trigtimetumordetect(dicomimgarr)
     #ImgarrTTPeak are all images in dicomarr in peakTT
     #TTarg is the arg of TT in TT list
     #ImgarrMIPBEFORETTPEAK is mip of (TTPeak -1) images (as comparison)
     #dim is image dim (480 in 480*480 case)
     
     #NEED TO INPUT MORPHOLOGICAL SNAKE ON CHEST
-    TTPeakMIPsegarr =segment(MIP_Return(ImgarrTTPeak)[:,:],0,0, 4)
-    TTPeakMIPseg = TTPeakMIPsegarr.reshape(math.sqrt(len(TTPeakMIPsegarr)), math.sqrt(len(TTPeakMIPsegarr)))
+    #TTPeakMIPseg =segment(MIP_Return(ImgarrTTPeak)[:,:],0,0, 4)
+    segarr = numpy.asarray([MIP_Return(ImgarrTTPeak), ImgarrMIPBeforeTTPeak])
+    TTMIPsegs = segment2(segarr,0,0, 4)
     
-    TTPeakMIPseg2=numpy.copy(TTPeakMIPseg)
+    TTPeakMIPseg2=numpy.copy(TTMIPsegs[0])
     TTPeakMIPseg2[numpy.where(TTPeakMIPseg2==1)]=0
-   
-    #Getting MIP Segged Chest of PrevPeak
-    TTPrevPeakMIPsegarr =segment(ImgarrMIPBeforeTTPeak,0,0, 4)
-    TTPrevPeakMIPseg = TTPrevPeakMIPsegarr.reshape(math.sqrt(len(TTPrevPeakMIPsegarr)), math.sqrt(len(TTPrevPeakMIPsegarr)))
+
+    #TTPrevPeakMIPseg =segment(ImgarrMIPBeforeTTPeak,0,0, 4)
     
-    TTPrevPeakMIPseg2=numpy.copy(TTPrevPeakMIPseg)
+    TTPrevPeakMIPseg2=numpy.copy(TTMIPsegs[1])
     TTPrevPeakMIPseg2[numpy.where(TTPrevPeakMIPseg2==1)]=0
     
     maxpixdiff=0
@@ -183,21 +186,29 @@ def LocateTumor(dicomimgarr):
             sum1=sum(TTPeakMIPseg2[i:i+20, j:j+20].ravel())
             sum2=sum(TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())
             
-            if(all(l!=0 for l in (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())) and all(l!=0 for l in (TTPeakMIPseg2[i:i+20, j:j+20].ravel()))):
-                a= abs(sum1-sum2)
+            #if(all(l!=0 for l in (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())) and all(l!=0 for l in (TTPeakMIPseg2[i:i+20, j:j+20].ravel()))):
+            if((TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50 and (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50):    
+                a= sum1-sum2
                 if(a>maxpixdiff):
                     maxpixdiff=a
                     imax=i+10
                     jmax=j+10
             
     return imax,jmax
-	
+#need to return tumor center + radius to input into morph snake function **Keep chest center + rad same??
+
+def MorphSnakeChest(img):
+    morph_snake(img, (220,240), 130)  #210,210
+
+def MorphSnakeTumor(img, ROI, radius):
+    morph_snake(img, ROI, radius)
+
 def findImgsWithMass(dicomimgarr): #174,329
     coords = LocateTumor(dicomimgarr)
     x=coords[0]
     y=coords[1]
     
-    TTimages, TTimagearg, ImgarrMIPBeforeTTPeak, dim = trigtimetumordetect(dicomimgarr)
+    TTimages, TTimagearg, ImgarrMIPBeforeTTPeak, dim, lastimgs = trigtimetumordetect(dicomimgarr)
     TTmip=MIP_Return(TTimages)
     
     massimagearr=[]
@@ -215,14 +226,84 @@ def findImgsWithMass(dicomimgarr): #174,329
     
     massimagearr2=numpy.array(massimagearr)
     return massimagearr2
-	
-def displayTumorImageSnakes(dicomimgarr):
-    morph_snake_patient2arr=numpy.array([])
-    massloc= LocateTumor(dicomimgarr)
-    imgs= findImgsWithMass(dicomimgarr)
+
+def dice(im1,im2):
+    if im1.shape != im2.shape:
+        raise ValueError("Shape mismatch: im1 and im2 must have the same shape.")
+        
+    im_sum = im1.sum() + im2.sum()
+
+    if im_sum == 0:
+        return 0
+
+    intersection = numpy.logical_and(im1, im2)
+
+    return 2. * intersection.sum() / im_sum
+
+def mapBackToOrigSeq(dicomimgarr, masslist):
+    a=trigtimetumordetect(dicomimgarr)
+    origargs=[]
     
-    for i in range(0,2):#imgs.shape[0]):
-        snake_seg = segment(imgs[i],0,0,2)
-        snake_seg2D= snake_seg.reshape(math.sqrt(len(snake_seg)), math.sqrt(len(snake_seg)))
-        numpy.append(morph_snake_patient2arr,morph_snake(snake_seg2D, massloc, 15))
-        #morph_snake(snake_seg2D, massloc, 15)
+    RefImg = dicom.read_file(dicomimgarr[1])
+    ConstPixelDims = (int(RefImg.Rows), int(RefImg.Columns),len(dicomimgarr))
+    ImgArray =numpy.zeros(ConstPixelDims, dtype=RefImg.pixel_array.dtype)
+
+    n1=0
+    for filenameDCM in dicomimgarr:
+        ds = dicom.read_file(filenameDCM)
+        ImgArray[:, :,n1] = ds.pixel_array
+        n1+=1
+    
+    for i in range(ImgArray.shape[2]):
+        ravelimgarr=ImgArray[:,:,i].ravel()
+        #ravela=a[0][:,:,j].ravel()
+        for j in masslist:
+            if(all(a[0][:,:,j].ravel()==ravelimgarr)):
+                origargs.append(i)
+    
+    return origargs    
+
+def createFolderWithOrigDicomMassArgs(dicomimgarr, masslist):
+    a=mapBackToOrigSeq(dicomimgarr,masslist)
+    strarr=[]
+    for i in a:
+        massstr=str(i)
+        strarr.append(massstr)
+    
+    current_directory = "./Documents/BREAST IMAGES used in Model/BreastDx-01-0030"
+    final_directory = os.path.join(current_directory, r'P30')
+    if not os.path.exists(final_directory):
+       os.makedirs(final_directory)
+    
+    Path = "./Documents/BREAST IMAGES used in Model/BreastDx-01-0030"
+    massfolders = []  # create an empty list
+    for dirName, subdirList, fileList in os.walk(PathDicom):
+        for filename in fileList:
+            for i in strarr:
+                if ".dcm" in filename.lower() and i in filename.lower():
+                    shutil.copy2(Path+'/' + filename, Path+ '/' + 'P30') # target filename is /dst/dir/file.ext
+                    
+def displayTumorImageSnakestestlist(dicomimgarr, listgiven, loc, inputrad):
+    morph_snake_patientarr=[]
+    a=trigtimetumordetect(dicomimgarr)
+    
+    if loc==0:
+        massloc= LocateTumor(dicomimgarr)
+    else:
+        massloc=loc
+    
+    arr = numpy.zeros((a[3], a[3], len(listgiven)))
+    j=0
+    
+    if inputrad==0:
+        rad=15
+    else: 
+        rad=inputrad
+    
+    for i in listgiven:
+        snake_seg = segment(a[0][:,:,i],0,0,2)
+        ms= morph_snake(snake_seg, massloc, rad)
+        #ms2 = numpy.copy(ms)
+        morph_snake_patientarr.append(ms)
+        
+    return morph_snake_patientarr
