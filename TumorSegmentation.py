@@ -8,8 +8,13 @@ import morphsnakes
 from scipy.misc import imread
 from matplotlib import pyplot, cm
 import pylab
-	
+
+##To RUN: 
+
 def MIP_Return(IMGSeries):
+	#Input: Image Array in format: [Pixel Value, Pixel Value, Image # in Sequence]
+	#Output: Singular MIP image
+	
     maxarray=numpy.zeros((int(IMGSeries.shape[0]), int(IMGSeries.shape[1]), int(IMGSeries.shape[2])))
     oneDimgarr=[]
     
@@ -25,6 +30,9 @@ def MIP_Return(IMGSeries):
     return(MipImage)
 
 def segment(image, tumorxcoord, tumorycoord, num_clusts):
+	#Input: Image as 2D Pixel Array - [Pixel Value, Pixel Value] 
+	#Output: Clustered Image
+	
     x1=0
     y1=0
     x2=image.shape[0]
@@ -43,13 +51,24 @@ def segment(image, tumorxcoord, tumorycoord, num_clusts):
         arr.append([flattenedImage[i], avgsurrpixels[i]])
 
     clt.fit(arr) 
-    seg=clt.labels_
+    seg=numpy.array(clt.labels_)
+    
+    centers= numpy.array(clt.cluster_centers_[:,1])
+    sortedcenters=numpy.array(numpy.sort(centers))
+    
+    for i in range(0,len(seg)):
+        a=centers[seg[i]]
+        b=numpy.where(sortedcenters==a)
+        seg[i]=b[0]
+    
     seg2D= seg.reshape(math.sqrt(len(seg)), math.sqrt(len(seg)))
     
     return seg2D
 
 def avgsurrvalues(img, x1, x2, y1, y2):
-    
+    #Input: image as 2D pixel array
+	#Output: (N*N)*1 vector for N*N input image that contains the average neighbor pixel values for every pixel in the input image
+	
     avgsurrvaluesvec = []
 
     for i in range(x1,x2):
@@ -85,8 +104,9 @@ def avgsurrvalues(img, x1, x2, y1, y2):
     return avgsurrvaluesvec
 
 def circle_levelset(shape, center, sqradius, scalerow=1.0):
-
-    """Build a binary function with a circle as the 0.5-levelset."""
+	#Input: image shape, region of interest, and radius
+	#Output: binary circle levelset for use in the morph_snake algorithm
+	
     grid = numpy.mgrid[list(map(slice, shape))].T - center
     phi = sqradius - numpy.sqrt(numpy.sum((grid.T)**2, 0))
     u = numpy.float_(phi > 0)
@@ -94,25 +114,25 @@ def circle_levelset(shape, center, sqradius, scalerow=1.0):
     return u
 
 def morph_snake(img, ROI, radius):
+	#Input: Image to apply snake to as well as a region of interest and radius for the snake to initialize from and extend to
+	#Output: Image of applied snake (including pixel values for mass outline)
+	
+	
     img1 = img/255.0
     # g(I)
     gI = morphsnakes.gborders(img1, alpha=1000, sigma=11)
 
-    # Morphological GAC. Initialization of the level-set.
-    #mgac = morphsnakes.MorphGAC(gI, smoothing=1, threshold=3, balloon=1)
-    #mgac.levelset = circle_levelset(img1.shape, (160, 330), 15,scalerow=0.75)
-
     mgac = morphsnakes.MorphACWE(img1, smoothing=3, lambda1=1, lambda2=1)
     mgac.levelset = circle_levelset(img1.shape,ROI , radius)
     
-    # Visual evolution.
     pylab.figure(figsize=(8, 6), dpi=400)
     return(morphsnakes.evolve_visual(mgac, num_iters=30, background=img1)) #110
     pylab.show()
 
 def trigtimetumordetect(dicomImgArr):
-    ##Finds trigger times that contain tumors using their MIPS **
-    
+    #Input: dicom image array
+    #Output: imgs of Peak Trigger Time, arg of Peak TT in TT seq, array of images of TT before Peak TT, and the image dimensions for each TT array
+	
     trigtimearr = []
     
     for filenameDCM in dicomImgArr:
@@ -151,31 +171,32 @@ def trigtimetumordetect(dicomImgArr):
     
     returnimgs=numpy.array(returnimgs)
     
+    returnimgsbeforeTT = ImgArray[:,:,returnimgargs-1,:]
     MIPBeforePeakTT = MIP_Return(ImgArray[:,:,returnimgargs-1,:])
     PicDim = int(ImgArray.shape[0])
     
-    #return imgs of peak TT, arg of peak TT in TT seq, and MIP of TT before
-    return (returnimgs, returnimgargs, MIPBeforePeakTT, PicDim, lastimgs)
+    return (returnimgs, returnimgargs, returnimgsbeforeTT, PicDim, lastimgs)
 
 def LocateTumor(dicomimgarr):
-    ImgarrTTPeak, TTarg, ImgarrMIPBeforeTTPeak,dim,lastimgs  = trigtimetumordetect(dicomimgarr)
+	#Input: dicom image array
+	#Output: x,y coordinates of detected mass
+
+    ImgarrTTPeak, TTarg, ImgarrBeforeTTPeak,dim,lastimgs  = trigtimetumordetect(dicomimgarr)
     #ImgarrTTPeak are all images in dicomarr in peakTT
     #TTarg is the arg of TT in TT list
     #ImgarrMIPBEFORETTPEAK is mip of (TTPeak -1) images (as comparison)
     #dim is image dim (480 in 480*480 case)
     
-    #NEED TO INPUT MORPHOLOGICAL SNAKE ON CHEST
-    #TTPeakMIPseg =segment(MIP_Return(ImgarrTTPeak)[:,:],0,0, 4)
-    segarr = numpy.asarray([MIP_Return(ImgarrTTPeak), ImgarrMIPBeforeTTPeak])
-    TTMIPsegs = segment2(segarr,0,0, 4)
     
-    TTPeakMIPseg2=numpy.copy(TTMIPsegs[0])
-    TTPeakMIPseg2[numpy.where(TTPeakMIPseg2==1)]=0
+    TTPeakMIPseg =segment(MIP_Return(ImgarrTTPeak)[:,:],0,0, 4)
+    
+    TTPeakMIPseg2=numpy.copy(TTPeakMIPseg)
+    TTPeakMIPseg2[numpy.where(TTPeakMIPseg2==3)]=0
 
-    #TTPrevPeakMIPseg =segment(ImgarrMIPBeforeTTPeak,0,0, 4)
+    TTPrevPeakMIPseg =segment(MIP_Return(ImgarrBeforeTTPeak),0,0, 4)
     
-    TTPrevPeakMIPseg2=numpy.copy(TTMIPsegs[1])
-    TTPrevPeakMIPseg2[numpy.where(TTPrevPeakMIPseg2==1)]=0
+    TTPrevPeakMIPseg2=numpy.copy(TTPrevPeakMIPseg)
+    TTPrevPeakMIPseg2[numpy.where(TTPrevPeakMIPseg2==3)]=0
     
     maxpixdiff=0
     imax=0
@@ -186,8 +207,8 @@ def LocateTumor(dicomimgarr):
             sum1=sum(TTPeakMIPseg2[i:i+20, j:j+20].ravel())
             sum2=sum(TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())
             
-            #if(all(l!=0 for l in (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())) and all(l!=0 for l in (TTPeakMIPseg2[i:i+20, j:j+20].ravel()))):
-            if((TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50 and (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50):    
+            if(all(l!=0 for l in (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel())) and all(l!=0 for l in (TTPeakMIPseg2[i:i+20, j:j+20].ravel()))):
+            #if((TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==0).sum()<30 and (TTPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50 and (TTPrevPeakMIPseg2[i:i+20, j:j+20].ravel()==3).sum()>50):    
                 a= sum1-sum2
                 if(a>maxpixdiff):
                     maxpixdiff=a
@@ -198,12 +219,12 @@ def LocateTumor(dicomimgarr):
 #need to return tumor center + radius to input into morph snake function **Keep chest center + rad same??
 
 def MorphSnakeChest(img):
-    morph_snake(img, (220,240), 130)  #210,210
+    morph_snake(img, (220,240), 130) 
 
-def MorphSnakeTumor(img, ROI, radius):
-    morph_snake(img, ROI, radius)
+def findImgsWithMass(dicomimgarr):
+	#Input: dicom image array
+	#Output: images in inputted dicom array where masses were detected
 
-def findImgsWithMass(dicomimgarr): #174,329
     coords = LocateTumor(dicomimgarr)
     x=coords[0]
     y=coords[1]
@@ -228,6 +249,8 @@ def findImgsWithMass(dicomimgarr): #174,329
     return massimagearr2
 
 def dice(im1,im2):
+	#Input: 2 images (binary)
+	#Output: Dice coefficient between images
     if im1.shape != im2.shape:
         raise ValueError("Shape mismatch: im1 and im2 must have the same shape.")
         
@@ -241,6 +264,9 @@ def dice(im1,im2):
     return 2. * intersection.sum() / im_sum
 
 def mapBackToOrigSeq(dicomimgarr, masslist):
+	#Inputs: dicom image array and arguments of detected masses 
+	#The function maps the arguments of the images containing masses in the respective peak trigger time array to their arguements in the original dicom array
+
     a=trigtimetumordetect(dicomimgarr)
     origargs=[]
     
@@ -264,6 +290,9 @@ def mapBackToOrigSeq(dicomimgarr, masslist):
     return origargs    
 
 def createFolderWithOrigDicomMassArgs(dicomimgarr, masslist):
+	#Inputs: dicom image array and list of detected mass args in dicom image array
+	#Creates folder with detected mass image dicom files
+
     a=mapBackToOrigSeq(dicomimgarr,masslist)
     strarr=[]
     for i in a:
